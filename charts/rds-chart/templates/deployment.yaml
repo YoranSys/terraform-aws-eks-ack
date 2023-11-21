@@ -10,19 +10,20 @@ metadata:
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
     k8s-app: {{ include "app.name" . }}
     helm.sh/chart: {{ include "chart.name-version" . }}
-    control-plane: controller
 spec:
-  replicas: 1
+  replicas: {{ .Values.deployment.replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "app.name" . }}
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
+{{- if .Values.deployment.annotations }}
       annotations:
       {{- range $key, $value := .Values.deployment.annotations }}
         {{ $key }}: {{ $value | quote }}
       {{- end }}
+{{- end }}
       labels:
         app.kubernetes.io/name: {{ include "app.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -47,14 +48,30 @@ spec:
         - "$(AWS_REGION)"
         - --aws-endpoint-url
         - "$(AWS_ENDPOINT_URL)"
+{{- if .Values.log.enable_development_logging }}
         - --enable-development-logging
-        - "$(ACK_ENABLE_DEVELOPMENT_LOGGING)"
+{{- end }}
         - --log-level
         - "$(ACK_LOG_LEVEL)"
         - --resource-tags
         - "$(ACK_RESOURCE_TAGS)"
         - --watch-namespace
         - "$(ACK_WATCH_NAMESPACE)"
+        - --deletion-policy
+        - "$(DELETION_POLICY)"
+{{- if .Values.leaderElection.enabled }}
+        - --enable-leader-election
+        - --leader-election-namespace
+        - "$(LEADER_ELECTION_NAMESPACE)"
+{{- end }}
+{{- if gt .Values.reconcile.defaultResyncPeriod 0.0 }}
+        - --reconcile-default-resync-seconds
+        - "$(RECONCILE_DEFAULT_RESYNC_SECONDS)"
+{{- end }}
+{{- range $key, $value := .Values.reconcile.resourceResyncPeriods }}
+        - --reconcile-resource-resync-seconds
+        - "$(RECONCILE_RESOURCE_RESYNC_SECONDS_{{ $key | upper }})"
+{{- end }}
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         name: controller
@@ -74,22 +91,40 @@ spec:
           value: {{ .Values.aws.endpoint_url | quote }}
         - name: ACK_WATCH_NAMESPACE
           value: {{ include "watch-namespace" . }}
-        - name: ACK_ENABLE_DEVELOPMENT_LOGGING
-          value: {{ .Values.log.enable_development_logging | quote }}
+        - name: DELETION_POLICY
+          value: {{ .Values.deletionPolicy }}
+        - name: LEADER_ELECTION_NAMESPACE
+          value: {{ .Values.leaderElection.namespace | quote }}
         - name: ACK_LOG_LEVEL
           value: {{ .Values.log.level | quote }}
         - name: ACK_RESOURCE_TAGS
           value: {{ join "," .Values.resourceTags | quote }}
+{{- if gt .Values.reconcile.defaultResyncPeriod 0.0 }}
+        - name: RECONCILE_DEFAULT_RESYNC_SECONDS
+          value: {{ .Values.reconcile.defaultResyncPeriod | quote }}
+{{- end }}
+{{- range $key, $value := .Values.reconcile.resourceResyncPeriods }}
+        - name: RECONCILE_RESOURCE_RESYNC_SECONDS_{{ $key | upper }}
+          value: {{ $key }}={{ $value }}
+{{- end }}
         {{- if .Values.aws.credentials.secretName }}
         - name: AWS_SHARED_CREDENTIALS_FILE
           value: {{ include "aws.credentials.path" . }}
         - name: AWS_PROFILE
           value: {{ .Values.aws.credentials.profile }}
+        {{- end }}
+        {{- if .Values.deployment.extraEnvVars -}}
+          {{ toYaml .Values.deployment.extraEnvVars | nindent 8 }}
+        {{- end }}
         volumeMounts:
+        {{- if .Values.aws.credentials.secretName }}
           - name: {{ .Values.aws.credentials.secretName }}
             mountPath: {{ include "aws.credentials.secret_mount_path" . }}
             readOnly: true
-        {{- end }}          
+        {{- end }}
+        {{- if .Values.deployment.extraVolumeMounts -}}
+          {{ toYaml .Values.deployment.extraVolumeMounts | nindent 10 }}
+        {{- end }}
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
@@ -97,6 +132,9 @@ spec:
           capabilities:
             drop:
               - ALL
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       terminationGracePeriodSeconds: 10
       nodeSelector: {{ toYaml .Values.deployment.nodeSelector | nindent 8 }}
       {{ if .Values.deployment.tolerations -}}
@@ -109,11 +147,15 @@ spec:
       priorityClassName: {{ .Values.deployment.priorityClassName }}
       {{ end -}}
       hostIPC: false
-      hostNetwork: false
       hostPID: false
-      {{ if .Values.aws.credentials.secretName -}}
+      hostNetwork: {{ .Values.deployment.hostNetwork }}
+      dnsPolicy: {{ .Values.deployment.dnsPolicy }}
       volumes:
+      {{- if .Values.aws.credentials.secretName }}
         - name: {{ .Values.aws.credentials.secretName }}
           secret:
             secretName: {{ .Values.aws.credentials.secretName }}
-      {{ end -}}
+      {{- end }}
+{{- if .Values.deployment.extraVolumes }}
+{{ toYaml .Values.deployment.extraVolumes | indent 8}}
+{{- end }}

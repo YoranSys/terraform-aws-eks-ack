@@ -47,6 +47,9 @@
           "minimum": 1,
           "maximum": 65535
         },
+        "replicas": {
+          "type": "integer"
+        },
         "nodeSelector": {
           "type": "object"
         },
@@ -58,12 +61,29 @@
         },
         "priorityClassName": {
           "type": "string"
+        },
+        "extraVolumeMounts": {
+          "type": "array"
+        },
+        "extraVolumes": {
+          "type": "array"
+        },
+        "extraEnvVars": {
+          "type": "array"
         }
       },
       "required": [
           "containerPort"
       ],
       "type": "object"
+    },
+    "role": {
+      "description": "Role settings",
+      "properties": {
+        "labels": {
+	  "type": "object"
+	}
+      }
     },
     "metrics": {
       "description": "Metrics settings",
@@ -188,12 +208,43 @@
       "type": "string",
       "enum": ["cluster", "namespace"]
     },
+    "watchNamespace": {
+      "type": "string"
+    },    
     "resourceTags": {
       "type": "array",
       "items": {
         "type": "string",
         "pattern": "(^$|^.*=.*$)"
       }
+    },
+    "deletionPolicy": {
+      "type": "string",
+      "enum": ["delete", "retain"]
+    },
+    "reconcile": {
+      "description": "Reconcile resync settings. Parameters to tune the controller's drift remediation period.",
+      "properties": {
+        "defaultResyncPeriod": {
+          "type": "number"
+        },
+        "resourceResyncPeriods": {
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "leaderElection": {
+      "description": "Parameter to configure the controller's leader election system.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "serviceAccount": {
       "description": "ServiceAccount settings",
